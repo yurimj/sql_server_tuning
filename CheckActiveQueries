@@ -1,0 +1,45 @@
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE PROCEDURE [dbo].[CheckActiveQueries]
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Seleciona informações das consultas em andamento
+    SELECT 
+        r.session_id AS SessaoID,
+        r.status AS Status,
+        r.start_time AS Inicio,
+        r.command AS Comando,
+        r.database_id AS BancoDeDadosID,
+        DB_NAME(r.database_id) AS NomeBancoDeDados,
+        r.wait_type AS TipoDeEspera,
+        r.wait_time / 1000 AS TempoDeEsperaSegundos,
+        r.cpu_time / 1000 AS TempoCPU_Segundos,
+        r.total_elapsed_time / 1000 AS TempoTotal_Segundos,
+        r.logical_reads AS LeituraLogica,
+        r.reads AS LeiturasFisicas,
+        r.writes AS Escritas,
+        SUBSTRING(qt.text, (r.statement_start_offset / 2) + 1,
+                  ((CASE WHEN r.statement_end_offset = -1 
+                         THEN LEN(CONVERT(NVARCHAR(MAX), qt.text)) * 2 
+                         ELSE r.statement_end_offset END - r.statement_start_offset) / 2) + 1) AS QueryExecutada,
+        qt.text AS TextoCompletoQuery,
+        qp.query_plan AS PlanoDeExecucao,
+        --s.login_name AS UsuarioExecutando, -- Nome do usuário conectado
+		SUSER_SNAME(s.security_id) AS Usuario
+    FROM 
+        sys.dm_exec_requests r
+    CROSS APPLY 
+        sys.dm_exec_sql_text(r.sql_handle) AS qt
+    CROSS APPLY 
+        sys.dm_exec_query_plan(r.plan_handle) AS qp
+    INNER JOIN
+        sys.dm_exec_sessions s ON r.session_id = s.session_id -- Junta para obter o nome do usuário
+    WHERE 
+        r.session_id != @@SPID -- Exclui a sessão atual
+    ORDER BY 
+        r.start_time ASC; -- Ordena por tempo de início
+END;
